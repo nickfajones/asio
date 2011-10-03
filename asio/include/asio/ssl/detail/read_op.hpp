@@ -58,6 +58,16 @@ public:
     handler(ec, bytes_transferred);
   }
 
+  typename MutableBufferSequence::const_iterator buffers_head()
+  {
+    return buffers_.end();
+  }
+
+  typename MutableBufferSequence::const_iterator buffers_end()
+  {
+    return buffers_.end();
+  }
+
 private:
   MutableBufferSequence buffers_;
 };

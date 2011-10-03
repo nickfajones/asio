@@ -35,16 +35,40 @@ template <typename Stream, typename Operation>
 std::size_t io(Stream& next_layer, stream_core& core,
     const Operation& op, asio::error_code& ec)
 {
+  Operation _op(op);
+
   std::size_t bytes_transferred = 0;
-  do switch (op(core.engine_, ec, bytes_transferred))
+  do switch (_op(core.engine_, ec, bytes_transferred))
   {
   case engine::want_input_and_retry:
 
-    // If the input buffer is empty then we need to read some more data from
-    // the underlying transport.
     if (asio::buffer_size(core.input_) == 0)
+    {
+      if (_op.buffers_head() != _op.buffers_end())
+      {
+        // use pre-buffered data to fill the input buffer
+        core.input_ = asio::buffer(*_op.buffers_head());
+        ++_op.buffers_head();
+
+        std::size_t input_size = asio::buffer_size(core.input_);
+
+        // Pass the new input data to the engine.
+        core.input_ = core.engine_.put_input(core.input_);
+
+        // in this case, bytes_transferred will indicate amount of
+        // pre-buffered data used
+        bytes_transferred +=
+            input_size - asio::buffer_size(core.input_);
+
+        // Try the operation again.
+        continue;
+      }
+
+      // If the input buffer is empty then we need to read some more data from
+      // the underlying transport.
       core.input_ = asio::buffer(core.input_buffer_,
           next_layer.read_some(core.input_buffer_, ec));
+    }
 
     // Pass the new input data to the engine.
     core.input_ = core.engine_.put_input(core.input_);
@@ -136,37 +160,59 @@ public:
         {
         case engine::want_input_and_retry:
 
+          if (asio::buffer_size(core_.input_) == 0)
+          {
+            if (op_.buffers_head() != op_.buffers_end())
+            {
+              // use pre-buffered data to fill the input buffer
+              core_.input_ = asio::buffer(*op_.buffers_head());
+              ++op_.buffers_head();
+
+              std::size_t input_size = asio::buffer_size(core_.input_);
+
+              // Pass the new input data to the engine.
+              core_.input_ = core_.engine_.put_input(core_.input_);
+
+              // in this case, bytes_transferred will indicate amount of
+              // pre-buffered data used
+              bytes_transferred_ +=
+                  input_size - asio::buffer_size(core_.input_);
+
+              // Try the operation again.
+              continue;
+            }
+
+            // The engine wants more data to be read from input. However, we
+            // cannot allow more than one read operation at a time on the
+            // underlying transport. The pending_read_ timer's expiry is set to
+            // pos_infin if a read is in progress, and neg_infin otherwise.
+            if (core_.pending_read_.expires_at() == boost::posix_time::neg_infin)
+            {
+              // Prevent other read operations from being started.
+              core_.pending_read_.expires_at(boost::posix_time::pos_infin);
+
+              // Start reading some data from the underlying transport.
+              next_layer_.async_read_some(
+                  asio::buffer(core_.input_buffer_),
+                  ASIO_MOVE_CAST(io_op)(*this));
+            }
+            else
+            {
+              // Wait until the current read operation completes.
+              core_.pending_read_.async_wait(ASIO_MOVE_CAST(io_op)(*this));
+            }
+
+            // Yield control until asynchronous operation completes. Control
+            // resumes at the "default:" label below.
+            return;
+          }
+
           // If the input buffer already has data in it we can pass it to the
           // engine and then retry the operation immediately.
-          if (asio::buffer_size(core_.input_) != 0)
-          {
-            core_.input_ = core_.engine_.put_input(core_.input_);
-            continue;
-          }
+          core_.input_ = core_.engine_.put_input(core_.input_);
 
-          // The engine wants more data to be read from input. However, we
-          // cannot allow more than one read operation at a time on the
-          // underlying transport. The pending_read_ timer's expiry is set to
-          // pos_infin if a read is in progress, and neg_infin otherwise.
-          if (core_.pending_read_.expires_at() == boost::posix_time::neg_infin)
-          {
-            // Prevent other read operations from being started.
-            core_.pending_read_.expires_at(boost::posix_time::pos_infin);
-
-            // Start reading some data from the underlying transport.
-            next_layer_.async_read_some(
-                asio::buffer(core_.input_buffer_),
-                ASIO_MOVE_CAST(io_op)(*this));
-          }
-          else
-          {
-            // Wait until the current read operation completes.
-            core_.pending_read_.async_wait(ASIO_MOVE_CAST(io_op)(*this));
-          }
-
-          // Yield control until asynchronous operation completes. Control
-          // resumes at the "default:" label below.
-          return;
+          // Try the operation again.
+          continue;
 
         case engine::want_output_and_retry:
         case engine::want_output:

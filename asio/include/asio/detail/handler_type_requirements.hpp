@@ -288,6 +288,26 @@ struct handler_type_requirements
           asio::detail::lvref<const asio::error_code>()), \
         char(0))>
 
+#define ASIO_BUFFERED_HANDSHAKE_HANDLER_CHECK( \
+    handler_type, handler) \
+  \
+  ASIO_HANDLER_TYPE_REQUIREMENTS_ASSERT( \
+      sizeof(asio::detail::one_arg_handler_test( \
+          handler, \
+          static_cast<const asio::error_code*>(0), \
+          static_cast<const std::size_t*>(0))) == 1, \
+      "BufferedHandshakeHandler type requirements not met") \
+  \
+  typedef asio::detail::handler_type_requirements< \
+      sizeof( \
+        asio::detail::argbyv( \
+          asio::detail::clvref(handler))) + \
+      sizeof( \
+        asio::detail::lvref(handler)( \
+          asio::detail::lvref<const asio::error_code>(), \
+          asio::detail::lvref<const std::size_t>()), \
+        char(0))>
+
 #define ASIO_SHUTDOWN_HANDLER_CHECK( \
     handler_type, handler) \
   \

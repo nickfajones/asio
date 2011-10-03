@@ -32,6 +32,11 @@ namespace detail {
 class shutdown_op
 {
 public:
+  shutdown_op()
+    : null_buf_(NULL)
+  {
+  }
+
   engine::want operator()(engine& eng,
       asio::error_code& ec,
       std::size_t& bytes_transferred) const
@@ -47,6 +52,18 @@ public:
   {
     handler(ec);
   }
+
+  std::string*& buffers_head()
+  {
+    return null_buf_;
+  }
+
+  std::string*& buffers_end()
+  {
+    return null_buf_;
+  }
+
+  std::string *null_buf_;
 };
 
 #endif // !defined(ASIO_ENABLE_OLD_SSL)

@@ -33,7 +33,8 @@ class handshake_op
 {
 public:
   handshake_op(stream_base::handshake_type type)
-    : type_(type)
+    : type_(type),
+      null_buf_(NULL)
   {
   }
 
@@ -53,8 +54,65 @@ public:
     handler(ec);
   }
 
+  std::string*& buffers_head()
+  {
+    return null_buf_;
+  }
+
+  std::string*& buffers_end()
+  {
+    return null_buf_;
+  }
+
+  stream_base::handshake_type type_;
+
+  std::string *null_buf_;
+};
+
+
+template <typename ConstBufferSequence>
+class buffered_handshake_op
+{
+public:
+  buffered_handshake_op(stream_base::handshake_type type,
+      const ConstBufferSequence& buffers)
+    : type_(type),
+      buffers_head_(buffers.begin()),
+      buffers_end_(buffers.end())
+  {
+  }
+
+  engine::want operator()(engine& eng,
+      asio::error_code& ec,
+      std::size_t& bytes_transferred) const
+  {
+    bytes_transferred = 0;
+    return eng.handshake(type_, ec);
+  }
+
+  template <typename Handler>
+  void call_handler(Handler& handler,
+      const asio::error_code& ec,
+      const std::size_t& bytes_transferred) const
+  {
+    handler(ec, bytes_transferred);
+  }
+
+  typename ConstBufferSequence::const_iterator& buffers_head()
+  {
+    return buffers_head_;
+  }
+
+  typename ConstBufferSequence::const_iterator& buffers_end()
+  {
+    return buffers_end_;
+  }
+
 private:
   stream_base::handshake_type type_;
+
+  typename ConstBufferSequence::const_iterator buffers_head_;
+  typename ConstBufferSequence::const_iterator buffers_end_;
 };
 
 #endif // !defined(ASIO_ENABLE_OLD_SSL)

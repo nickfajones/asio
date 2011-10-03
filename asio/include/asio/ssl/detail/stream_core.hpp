@@ -64,13 +64,13 @@ struct stream_core
   asio::deadline_timer pending_write_;
 
   // Buffer space used to prepare output intended for the transport.
-  std::vector<unsigned char> output_buffer_space_; 
+  std::vector<unsigned char> output_buffer_space_;
 
   // A buffer that may be used to prepare output intended for the transport.
-  const asio::mutable_buffers_1 output_buffer_; 
+  const asio::mutable_buffers_1 output_buffer_;
 
   // Buffer space used to read input intended for the engine.
-  std::vector<unsigned char> input_buffer_space_; 
+  std::vector<unsigned char> input_buffer_space_;
 
   // A buffer that may be used to read input intended for the engine.
   const asio::mutable_buffers_1 input_buffer_;
