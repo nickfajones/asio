@@ -365,6 +365,18 @@ public:
         ASIO_MOVE_CAST(ReadHandler)(handler));
   }
 
+  template <typename MutableBufferSequence, typename ReadHandler>
+  void async_receive_from(implementation_type& impl,
+      const MutableBufferSequence& buffers,
+      endpoint_type& sender_endpoint, endpoint_type& destination_endpoint,
+      socket_base::message_flags flags,
+      ASIO_MOVE_ARG(ReadHandler) handler)
+  {
+    service_impl_.async_receive_from(impl, buffers,
+        sender_endpoint, destination_endpoint, flags,
+        ASIO_MOVE_CAST(ReadHandler)(handler));
+  }
+
 private:
   // Destroy all user-defined handler objects owned by the service.
   void shutdown_service()

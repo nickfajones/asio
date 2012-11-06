@@ -405,6 +405,15 @@ public:
     p.v = p.p = 0;
   }
 
+  template <typename MutableBufferSequence, typename Handler>
+  void async_receive_from(implementation_type& impl,
+      const MutableBufferSequence& buffers,
+      endpoint_type& sender_endp, endpoint_type& destination_endp,
+      socket_base::message_flags flags, Handler handler)
+  {
+    async_receive_from(impl, buffers, sender_endp, flags, handler);
+  }
+
   // Wait until data can be received without blocking.
   template <typename Handler>
   void async_receive_from(implementation_type& impl,

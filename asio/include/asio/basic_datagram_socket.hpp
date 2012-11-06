@@ -851,6 +851,61 @@ public:
    * is retained by the caller, which must guarantee that it is valid until the
    * handler is called.
    *
+   * @param destination_endpoint An endpoint object that receives the endpoint
+   * of original destination receiver of the data. Ownership of the
+   * destination_endpoint object is retained by the caller, which must guarantee
+   * that it is valid until the handler is called.
+   *
+   * @param handler The handler to be called when the receive operation
+   * completes. Copies will be made of the handler as required. The function
+   * signature of the handler must be:
+   * @code void handler(
+   *   const asio::error_code& error, // Result of operation.
+   *   std::size_t bytes_transferred           // Number of bytes received.
+   * ); @endcode
+   * Regardless of whether the asynchronous operation completes immediately or
+   * not, the handler will not be invoked from within this function. Invocation
+   * of the handler will be performed in a manner equivalent to using
+   * boost::asio::io_service::post().
+   *
+   * @par Example
+   * To receive into a single data buffer use the @ref buffer function as
+   * follows:
+   * @code socket.async_receive_from(
+   *     boost::asio::buffer(data, size), 0, sender_endpoint, handler); @endcode
+   * See the @ref buffer documentation for information on receiving into
+   * multiple buffers in one go, and how to use it with arrays, boost::array or
+   * std::vector.
+   */
+  template <typename MutableBufferSequence, typename ReadHandler>
+  void async_receive_from(const MutableBufferSequence& buffers,
+      endpoint_type& sender_endpoint, endpoint_type& destination_endpoint,
+      ASIO_MOVE_ARG(ReadHandler) handler)
+  {
+    // If you get an error on the following line it means that your handler does
+    // not meet the documented type requirements for a ReadHandler.
+    ASIO_READ_HANDLER_CHECK(ReadHandler, handler) type_check;
+
+    this->get_service().async_receive_from(this->get_implementation(), buffers,
+        sender_endpoint, destination_endpoint, 0,
+        ASIO_MOVE_CAST(ReadHandler)(handler));
+  }
+
+  /// Start an asynchronous receive.
+  /**
+   * This function is used to asynchronously receive a datagram. The function
+   * call always returns immediately.
+   *
+   * @param buffers One or more buffers into which the data will be received.
+   * Although the buffers object may be copied as necessary, ownership of the
+   * underlying memory blocks is retained by the caller, which must guarantee
+   * that they remain valid until the handler is called.
+   *
+   * @param sender_endpoint An endpoint object that receives the endpoint of
+   * the remote sender of the datagram. Ownership of the sender_endpoint object
+   * is retained by the caller, which must guarantee that it is valid until the
+   * handler is called.
+   *
    * @param flags Flags specifying how the receive call is to be made.
    *
    * @param handler The handler to be called when the receive operation

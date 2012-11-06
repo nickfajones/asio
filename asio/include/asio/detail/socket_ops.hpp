@@ -152,6 +152,10 @@ ASIO_DECL int recvfrom(socket_type s, buf* bufs, size_t count, int flags,
     socket_addr_type* addr, std::size_t* addrlen,
     asio::error_code& ec);
 
+ASIO_DECL int recvfrom(socket_type s, buf* bufs, size_t count, int flags,
+    socket_addr_type* sender_addr, socket_addr_type* destination_addr,
+    std::size_t* addrlen, asio::error_code& ec);
+
 ASIO_DECL size_t sync_recvfrom(socket_type s, state_type state,
     buf* bufs, size_t count, int flags, socket_addr_type* addr,
     std::size_t* addrlen, asio::error_code& ec);
@@ -167,6 +171,12 @@ ASIO_DECL void complete_iocp_recvfrom(
 ASIO_DECL bool non_blocking_recvfrom(socket_type s,
     buf* bufs, size_t count, int flags,
     socket_addr_type* addr, std::size_t* addrlen,
+    asio::error_code& ec, size_t& bytes_transferred);
+
+ASIO_DECL bool non_blocking_recvfrom(
+    socket_type s, buf* bufs, size_t count, int flags,
+    socket_addr_type* sender_addr, socket_addr_type* destination_addr,
+    std::size_t* addrlen,
     asio::error_code& ec, size_t& bytes_transferred);
 
 #endif // defined(ASIO_HAS_IOCP)

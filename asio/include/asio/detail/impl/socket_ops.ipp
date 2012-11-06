@@ -850,6 +850,65 @@ int recvfrom(socket_type s, buf* bufs, size_t count, int flags,
 #endif // defined(BOOST_WINDOWS) || defined(__CYGWIN__)
 }
 
+int recvfrom(socket_type s, buf* bufs, size_t count, int flags,
+    socket_addr_type* sender_addr, socket_addr_type* destination_addr, 
+    std::size_t* addrlen, asio::error_code& ec)
+{
+#if defined(BOOST_WINDOWS) || defined(__CYGWIN__)
+  return recvfrom(s, bufs, count, flags, sender_addr, addrlen, ec);
+#else // defined(BOOST_WINDOWS) || defined(__CYGWIN__)
+  clear_last_error();
+
+  msghdr msg = msghdr();
+  init_msghdr_msg_name(msg.msg_name, sender_addr);
+  msg.msg_namelen = *addrlen;
+  msg.msg_iov = bufs;
+  msg.msg_iovlen = count;
+  msg.msg_controllen = CMSG_LEN(sizeof(struct sockaddr_in6));
+  
+  char* ctrl_buf = new char[msg.msg_controllen];
+  memset(ctrl_buf, 0, msg.msg_controllen);
+  msg.msg_control = ctrl_buf;
+
+  int result = error_wrapper(::recvmsg(s, &msg, flags), ec);
+  *addrlen = msg.msg_namelen;
+  if (result >= 0)
+  {
+    ec = asio::error_code();
+
+    for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); 
+         cmsg != NULL; 
+         cmsg = CMSG_NXTHDR(&msg, cmsg))
+    {
+      if (sender_addr->sa_family == AF_INET
+          && cmsg->cmsg_level == SOL_IP
+          && cmsg->cmsg_type == IP_ORIGDSTADDR)
+      {
+        memcpy(destination_addr, CMSG_DATA(cmsg), sizeof(struct sockaddr_in));
+        break;
+      }
+#ifdef IPV6_ORIGDSTADDR
+#define ASIO_IPV6_ORIGDSTADDR IPV6_ORIGDSTADDR
+#else
+#define ASIO_IPV6_ORIGDSTADDR 74
+#endif
+      else if (sender_addr->sa_family == AF_INET6
+          && cmsg->cmsg_level == SOL_IPV6 
+          && cmsg->cmsg_type == ASIO_IPV6_ORIGDSTADDR)
+      {
+        memcpy(destination_addr, CMSG_DATA(cmsg), sizeof(struct sockaddr_in6));
+        break;
+      }
+#undef ASIO_IPV6_ORIGDSTADDR
+    }
+  }
+  
+  delete ctrl_buf;
+
+  return result;
+#endif // defined(BOOST_WINDOWS) || defined(__CYGWIN__)
+}
+
 size_t sync_recvfrom(socket_type s, state_type state, buf* bufs,
     size_t count, int flags, socket_addr_type* addr,
     std::size_t* addrlen, asio::error_code& ec)
@@ -909,10 +968,24 @@ bool non_blocking_recvfrom(socket_type s,
     socket_addr_type* addr, std::size_t* addrlen,
     asio::error_code& ec, size_t& bytes_transferred)
 {
+  return non_blocking_recvfrom(s, bufs, count, flags,
+      addr, NULL, addrlen, ec, bytes_transferred);
+}
+
+bool non_blocking_recvfrom(socket_type s, buf* bufs, size_t count, int flags, 
+    socket_addr_type* sender_addr, socket_addr_type* destination_addr, 
+    std::size_t* addrlen, asio::error_code& ec, size_t& bytes_transferred)
+{
   for (;;)
   {
     // Read some data.
-    int bytes = socket_ops::recvfrom(s, bufs, count, flags, addr, addrlen, ec);
+    int bytes = 0;
+    if (destination_addr == NULL)
+      bytes = socket_ops::recvfrom(
+          s, bufs, count, flags, sender_addr, addrlen, ec);
+    else
+      bytes = socket_ops::recvfrom(
+          s, bufs, count, flags, sender_addr, destination_addr, addrlen, ec);
 
     // Retry operation if interrupted by signal.
     if (ec == asio::error::interrupted)

@@ -323,6 +323,32 @@ public:
     p.v = p.p = 0;
   }
 
+  template <typename MutableBufferSequence, typename Handler>
+  void async_receive_from(implementation_type& impl,
+      const MutableBufferSequence& buffers,
+      endpoint_type& sender_endpoint, endpoint_type& destination_endpoint,
+      socket_base::message_flags flags, Handler handler)
+  {
+    // Allocate and construct an operation to wrap the handler.
+    typedef reactive_socket_recvfrom_dest_op<MutableBufferSequence,
+        endpoint_type, Handler> op;
+    typename op::ptr p = { boost::addressof(handler),
+      asio_handler_alloc_helpers::allocate(
+        sizeof(op), handler), 0 };
+    int protocol = impl.protocol_.type();
+    p.p = new (p.v) op(impl.socket_, protocol,
+        buffers, sender_endpoint, destination_endpoint, flags, handler);
+
+    ASIO_HANDLER_CREATION((p.p, "socket",
+          &impl, "async_receive_from"));
+
+    start_op(impl,
+        (flags & socket_base::message_out_of_band)
+          ? reactor::except_op : reactor::read_op,
+        p.p, true, false);
+    p.v = p.p = 0;
+  }
+
   // Wait until data can be received without blocking.
   template <typename Handler>
   void async_receive_from(implementation_type& impl,
