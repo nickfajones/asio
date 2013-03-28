@@ -116,6 +116,12 @@ context::context(context::method m)
         asio::error::get_ssl_category());
     asio::detail::throw_error(ec, "context");
   }
+
+#ifdef SSL_OP_NO_COMPRESSION
+  ::SSL_CTX_set_options(handle_, SSL_OP_NO_COMPRESSION);
+#elif OPENSSL_VERSION_NUMBER >= 0x00908000L
+  ::sk_SSL_COMP_zero(::SSL_COMP_get_compression_methods());
+#endif
 }
 
 context::context(asio::io_service&, context::method m)
