@@ -287,10 +287,21 @@ int engine::do_connect(void*, std::size_t)
 
 int engine::do_shutdown(void*, std::size_t)
 {
-  int result = ::SSL_shutdown(ssl_);
-  if (result == 0)
-    result = ::SSL_shutdown(ssl_);
-  return result;
+  int shutdown_flags = ::SSL_get_shutdown(ssl_);
+  int shutdown_result = ::SSL_shutdown(ssl_);
+
+  if (!(shutdown_flags & SSL_SENT_SHUTDOWN) &&
+      !(shutdown_flags & SSL_RECEIVED_SHUTDOWN))
+  {
+    // Initiating shutdown case
+    if (shutdown_result != 0)
+      return shutdown_result;
+
+    // Attempt to wait for close confirmation
+    ::SSL_shutdown(ssl_);
+  }
+
+  return 1;
 }
 
 int engine::do_read(void* data, std::size_t length)
