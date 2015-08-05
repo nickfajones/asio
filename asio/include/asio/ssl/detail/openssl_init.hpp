@@ -39,6 +39,12 @@ protected:
   // instance must be static in this function to ensure that it gets
   // initialised before any other global objects try to use it.
   ASIO_DECL static asio::detail::shared_ptr<do_init> instance();
+
+  // Concrete implementation of this function
+  ASIO_DECL int ctx_data_index();
+
+  // Concrete implementation of this function
+  ASIO_DECL int con_data_index();
 };
 
 template <bool Do_Init = true>
@@ -61,6 +67,17 @@ public:
   {
   }
 
+public:
+  int ctx_data_index()
+  {
+    return openssl_init_base::ctx_data_index();
+  }
+
+  int con_data_index()
+  {
+    return openssl_init_base::con_data_index();
+  }
+
 private:
   // Instance to force initialisation of openssl at global scope.
   static openssl_init instance_;
@@ -72,6 +89,38 @@ private:
 
 template <bool Do_Init>
 openssl_init<Do_Init> openssl_init<Do_Init>::instance_;
+
+template <>
+class openssl_init<false> : private openssl_init_base
+{
+public:
+  // Constructor
+  openssl_init()
+    : ref_(instance())
+  {
+  }
+
+  // Destructor
+  ~openssl_init()
+  {
+  }
+
+public:
+  int ctx_data_index()
+  {
+    return openssl_init_base::ctx_data_index();
+  }
+
+  int con_data_index()
+  {
+    return openssl_init_base::con_data_index();
+  }
+
+private:
+  // Reference to singleton do_init object to ensure that openssl does not get
+  // cleaned up until the last user has finished with it.
+  asio::detail::shared_ptr<do_init> ref_;
+};
 
 } // namespace detail
 } // namespace ssl

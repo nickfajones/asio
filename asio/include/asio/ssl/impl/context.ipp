@@ -24,6 +24,7 @@
 # include "asio/error.hpp"
 # include "asio/ssl/context.hpp"
 # include "asio/ssl/error.hpp"
+# include "asio/ssl/detail/engine.hpp"
 #endif // !defined(ASIO_ENABLE_OLD_SSL)
 
 #include "asio/detail/push_options.hpp"
@@ -34,8 +35,12 @@ namespace ssl {
 #if !defined(ASIO_ENABLE_OLD_SSL)
 
 context::context(context::method m)
-  : handle_(0)
+  : handle_(0),
+    verify_callback_(0),
+    reject_renegotiations_(false)
 {
+  ::ERR_clear_error();
+
   switch (m)
   {
 #if defined(OPENSSL_NO_SSL2)
@@ -117,19 +122,54 @@ context::context(context::method m)
     asio::detail::throw_error(ec, "context");
   }
 
+  if (init_.ctx_data_index() == -1)
+  {
+    asio::error_code ec(SSL_ERROR_SSL,
+        asio::error::get_ssl_category());
+    asio::detail::throw_error(ec, "context");
+  }
+
+  if (init_.con_data_index() == -1)
+  {
+    asio::error_code ec(SSL_ERROR_SSL,
+        asio::error::get_ssl_category());
+    asio::detail::throw_error(ec, "context");
+  }
+  
+  if (!::SSL_CTX_set_ex_data(handle_, init_.ctx_data_index(), this))
+  {
+    asio::error_code ec(SSL_ERROR_SSL,
+        asio::error::get_ssl_category());
+    asio::detail::throw_error(ec, "context");
+  }
+
 #ifdef SSL_OP_NO_COMPRESSION
   ::SSL_CTX_set_options(handle_, SSL_OP_NO_COMPRESSION);
 #elif OPENSSL_VERSION_NUMBER >= 0x00908000L
   ::sk_SSL_COMP_zero(::SSL_COMP_get_compression_methods());
 #endif
+
+  ::SSL_CTX_set_info_callback(handle_, info_callback_function);
 }
 
 context::context(asio::io_service&, context::method m)
-  : handle_(0)
+  : handle_(0),
+    reject_renegotiations_(false),
+    verify_callback_(0)
 {
   context tmp(m);
   handle_ = tmp.handle_;
   tmp.handle_ = 0;
+
+  if (!::SSL_CTX_set_ex_data(handle_, init_.ctx_data_index(), this))
+  {
+    asio::error_code ec(SSL_ERROR_SSL,
+        asio::error::get_ssl_category());
+    asio::detail::throw_error(ec, "context");
+  }
+
+  verify_callback_ = tmp.verify_callback_;
+  tmp.verify_callback_ = 0;
 }
 
 #if defined(ASIO_HAS_MOVE) || defined(GENERATING_DOCUMENTATION)
@@ -137,6 +177,18 @@ context::context(context&& other)
 {
   handle_ = other.handle_;
   other.handle_ = 0;
+
+  if (!::SSL_CTX_set_ex_data(handle_, init_.ctx_data_index(), this))
+  {
+    asio::error_code ec(SSL_ERROR_SSL,
+        asio::error::get_ssl_category());
+    asio::detail::throw_error(ec, "context");
+  }
+
+  reject_renegotiations_ = other.reject_renegotiations_;
+
+  verify_callback_ = other.verify_callback_;
+  other.verify_callback_ = 0;
 }
 
 context& context::operator=(context&& other)
@@ -144,6 +196,19 @@ context& context::operator=(context&& other)
   context tmp(ASIO_MOVE_CAST(context)(*this));
   handle_ = other.handle_;
   other.handle_ = 0;
+
+  if (!::SSL_CTX_set_ex_data(handle_, init_.ctx_data_index(), this))
+  {
+    asio::error_code ec(SSL_ERROR_SSL,
+        asio::error::get_ssl_category());
+    asio::detail::throw_error(ec, "context");
+  }
+
+  reject_renegotiations_ = other.reject_renegotiations_;
+
+  verify_callback_ = other.verify_callback_;
+  other.verify_callback_ = 0;
+
   return *this;
 }
 #endif // defined(ASIO_HAS_MOVE) || defined(GENERATING_DOCUMENTATION)
@@ -161,14 +226,13 @@ context::~context()
       handle_->default_passwd_callback_userdata = 0;
     }
 
-    if (SSL_CTX_get_app_data(handle_))
+    if (verify_callback_)
     {
-      detail::verify_callback_base* callback =
-        static_cast<detail::verify_callback_base*>(
-            SSL_CTX_get_app_data(handle_));
-      delete callback;
-      SSL_CTX_set_app_data(handle_, 0);
+      delete verify_callback_;
+      verify_callback_ = 0;
     }
+
+    ::SSL_CTX_set_ex_data(handle_, init_.ctx_data_index(), 0);
 
     ::SSL_CTX_free(handle_);
   }
@@ -184,6 +248,22 @@ context::impl_type context::impl()
   return handle_;
 }
 
+void context::set_reject_renegotiations(bool reject)
+{
+  asio::error_code ec;
+  set_reject_renegotiations(reject, ec);
+  asio::detail::throw_error(ec, "set_reject_renegotiations");
+}
+
+asio::error_code context::set_reject_renegotiations(
+    bool reject, asio::error_code& ec)
+{
+  reject_renegotiations_ = reject;
+
+  ec = asio::error_code();
+  return ec;
+}
+
 void context::set_options(context::options o)
 {
   asio::error_code ec;
@@ -194,6 +274,8 @@ void context::set_options(context::options o)
 asio::error_code context::set_options(
     context::options o, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   ::SSL_CTX_set_options(handle_, o);
 
   ec = asio::error_code();
@@ -210,6 +292,8 @@ void context::set_verify_mode(verify_mode v)
 asio::error_code context::set_verify_mode(
     verify_mode v, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   ::SSL_CTX_set_verify(handle_, v, ::SSL_CTX_get_verify_callback(handle_));
 
   ec = asio::error_code();
@@ -226,6 +310,8 @@ void context::set_verify_depth(int depth)
 asio::error_code context::set_verify_depth(
     int depth, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   ::SSL_CTX_set_verify_depth(handle_, depth);
 
   ec = asio::error_code();
@@ -242,6 +328,8 @@ void context::load_verify_file(const std::string& filename)
 asio::error_code context::load_verify_file(
     const std::string& filename, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   if (::SSL_CTX_load_verify_locations(handle_, filename.c_str(), 0) != 1)
   {
     ec = asio::error_code(::ERR_get_error(),
@@ -263,6 +351,8 @@ void context::add_certificate_authority(const std::string& ca)
 asio::error_code context::add_certificate_authority(
     const std::string& ca, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   ::BIO *bio;
   ::X509 *cert;
   ::X509_STORE *store;
@@ -321,6 +411,8 @@ void context::set_default_verify_paths()
 asio::error_code context::set_default_verify_paths(
     asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   if (::SSL_CTX_set_default_verify_paths(handle_) != 1)
   {
     ec = asio::error_code(::ERR_get_error(),
@@ -342,6 +434,8 @@ void context::add_verify_path(const std::string& path)
 asio::error_code context::add_verify_path(
     const std::string& path, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   if (::SSL_CTX_load_verify_locations(handle_, 0, path.c_str()) != 1)
   {
     ec = asio::error_code(::ERR_get_error(),
@@ -365,6 +459,8 @@ asio::error_code context::use_certificate_file(
     const std::string& filename, file_format format,
     asio::error_code& ec)
 {
+  ::ERR_clear_error(); 
+
   int file_type;
   switch (format)
   {
@@ -475,6 +571,8 @@ void context::use_certificate_chain_file(const std::string& filename)
 asio::error_code context::use_certificate_chain_file(
     const std::string& filename, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   if (::SSL_CTX_use_certificate_chain_file(handle_, filename.c_str()) != 1)
   {
     ec = asio::error_code(::ERR_get_error(),
@@ -496,6 +594,8 @@ void context::use_certificate_chain(const std::string& chain)
 asio::error_code context::use_certificate_chain(
     const std::string& chain, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   ::BIO *bio;
   ::X509 *cert, *cacert;
   int res, resca, resend;
@@ -588,6 +688,8 @@ asio::error_code context::use_private_key_file(
     const std::string& filename, context::file_format format,
     asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   int file_type;
   switch (format)
   {
@@ -627,6 +729,8 @@ asio::error_code context::use_private_key(
     const std::string& private_key, context::file_format format,
     asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   ::BIO *bio;
   ::EVP_PKEY *evp_private_key;
 
@@ -705,6 +809,8 @@ asio::error_code context::use_rsa_private_key_file(
     const std::string& filename, context::file_format format,
     asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   int file_type;
   switch (format)
   {
@@ -745,6 +851,8 @@ asio::error_code context::use_rsa_private_key(
     const std::string& private_key, context::file_format format,
     asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   ::BIO *bio;
   ::RSA *rsa_private_key;
 
@@ -815,6 +923,8 @@ namespace detail {
 static asio::error_code do_use_tmp_dh(
     SSL_CTX *handle, ::BIO *bio, asio::error_code& ec)
 {
+  ::ERR_clear_error();
+
   ::DH *dh;
   int result;
 
@@ -897,17 +1007,25 @@ asio::error_code context::use_tmp_dh(
 asio::error_code context::do_set_verify_callback(
     detail::verify_callback_base* callback, asio::error_code& ec)
 {
-  if (SSL_CTX_get_app_data(handle_))
+  if (verify_callback_)
   {
-    delete static_cast<detail::verify_callback_base*>(
-        SSL_CTX_get_app_data(handle_));
+    delete verify_callback_;
   }
 
-  SSL_CTX_set_app_data(handle_, callback);
+  verify_callback_ = callback;
 
-  ::SSL_CTX_set_verify(handle_,
-      ::SSL_CTX_get_verify_mode(handle_),
-      &context::verify_callback_function);
+  if (verify_callback_)
+  {
+    ::SSL_CTX_set_verify(handle_,
+        ::SSL_CTX_get_verify_mode(handle_),
+        &context::verify_callback_function);
+  }
+  else
+  {
+    ::SSL_CTX_set_verify(handle_,
+        ::SSL_CTX_get_verify_mode(handle_),
+        0);
+  }
 
   ec = asio::error_code();
   return ec;
@@ -915,28 +1033,73 @@ asio::error_code context::do_set_verify_callback(
 
 int context::verify_callback_function(int preverified, X509_STORE_CTX* ctx)
 {
-  if (ctx)
-  {
-    if (SSL* ssl = static_cast<SSL*>(
-          ::X509_STORE_CTX_get_ex_data(
-            ctx, ::SSL_get_ex_data_X509_STORE_CTX_idx())))
-    {
-      if (SSL_CTX* handle = ::SSL_get_SSL_CTX(ssl))
-      {
-        if (SSL_CTX_get_app_data(handle))
-        {
-          detail::verify_callback_base* callback =
-            static_cast<detail::verify_callback_base*>(
-                SSL_CTX_get_app_data(handle));
+  asio::ssl::detail::openssl_init<false> init;
 
-          verify_context verify_ctx(ctx);
-          return callback->call(preverified != 0, verify_ctx) ? 1 : 0;
-        }
-      }
-    }
+  if (!ctx)
+  {
+    return 0;
   }
 
+  SSL* ssl = static_cast<SSL*>(
+      ::X509_STORE_CTX_get_ex_data(
+        ctx, ::SSL_get_ex_data_X509_STORE_CTX_idx()));
+  if (!ssl)
+  {
+    return 0;
+  }
+
+  SSL_CTX* handle = ::SSL_get_SSL_CTX(ssl);
+  if (!handle)
+  {
+    return 0;
+  }
+
+  context* context =
+      static_cast<class context*>(
+        SSL_CTX_get_ex_data(handle, init.ctx_data_index()));
+  if (!context || !context->verify_callback_)
+  {
+    return 0;
+  }
+
+  verify_context verify_ctx(ctx);
+  return
+    context->verify_callback_->call(preverified != 0, verify_ctx) ? 1 : 0;
+
   return 0;
+}
+
+void context::info_callback_function(const SSL *ssl, int type, int val)
+{
+  asio::ssl::detail::openssl_init<false> init;
+
+  SSL_CTX* handle = ::SSL_get_SSL_CTX(ssl);
+  if (!handle)
+  {
+    return;
+  }
+
+  context* context =
+      static_cast<class context*>(
+        SSL_CTX_get_ex_data(handle, init.ctx_data_index()));
+  if (!context)
+  {
+    return;
+  }
+
+  if (type & SSL_CB_HANDSHAKE_START)
+  {
+    detail::engine* engine =
+        static_cast<class detail::engine*>(
+          SSL_get_ex_data(ssl, init.con_data_index()));
+
+    if (context->reject_renegotiations_ &&
+        engine->is_initial_handshake_complete())
+    {
+      asio::error_code ec;
+      engine->shutdown_now(ec);
+    }
+  }
 }
 
 asio::error_code context::do_set_password_callback(

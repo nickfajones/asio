@@ -33,15 +33,29 @@ namespace detail {
 class openssl_init_base::do_init
 {
 public:
+  friend class openssl_init_base;
+
+public:
   do_init()
   {
     ::SSL_library_init();
     ::SSL_load_error_strings();        
     ::OpenSSL_add_all_algorithms();
+#if !defined(OPENSSL_NO_ENGINE)
+    ::ENGINE_load_builtin_engines();
+#endif // !defined(OPENSSL_NO_ENGINE)
 
     mutexes_.resize(::CRYPTO_num_locks());
     for (size_t i = 0; i < mutexes_.size(); ++i)
       mutexes_[i].reset(new asio::detail::mutex);
+
+    // sacrifice the zero index to avoid conflicts with preset indices
+    ::SSL_CTX_get_ex_new_index(0, 0, 0, 0, 0);
+    ::SSL_get_ex_new_index(0, 0, 0, 0, 0);
+
+    ctx_data_index_ = ::SSL_CTX_get_ex_new_index(0, 0, 0, 0, 0);
+    con_data_index_ = ::SSL_get_ex_new_index(0, 0, 0, 0, 0);
+
     ::CRYPTO_set_locking_callback(&do_init::openssl_locking_func);
     ::CRYPTO_set_id_callback(&do_init::openssl_id_func);
   }
@@ -59,6 +73,11 @@ public:
     ::ENGINE_cleanup();
 #endif // !defined(OPENSSL_NO_ENGINE)
   }
+
+private:
+  // User data indices for different situations
+  int ctx_data_index_;
+  int con_data_index_;
 
 private:
   static unsigned long openssl_id_func()
@@ -98,6 +117,16 @@ openssl_init_base::instance()
 {
   static asio::detail::shared_ptr<do_init> init(new do_init);
   return init;
+}
+
+int openssl_init_base::ctx_data_index()
+{
+  return instance()->ctx_data_index_;
+}
+
+int openssl_init_base::con_data_index()
+{
+  return instance()->con_data_index_;
 }
 
 } // namespace detail

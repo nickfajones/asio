@@ -68,6 +68,9 @@ public:
   // Get the underlying implementation in the native type.
   ASIO_DECL SSL* native_handle();
 
+  // Indicates whether the initial handshake has been completed.
+  ASIO_DECL bool is_initial_handshake_complete();
+
   // Set the peer verification mode.
   ASIO_DECL asio::error_code set_verify_mode(
       verify_mode v, asio::error_code& ec);
@@ -83,6 +86,9 @@ public:
 
   // Perform a graceful shutdown of the SSL session.
   ASIO_DECL want shutdown(asio::error_code& ec);
+
+  // Perform an immmeditate shutdown of the SSL session.
+  ASIO_DECL want shutdown_now(asio::error_code& ec);
 
   // Write bytes to the SSL session.
   ASIO_DECL want write(const asio::const_buffer& data,
@@ -143,6 +149,15 @@ private:
 
   SSL* ssl_;
   BIO* ext_bio_;
+
+  // The raw pointer to the certificate verification callback.
+  detail::verify_callback_base* verify_callback_;
+
+  // The flag indicating whether the initial handshake has been completed.
+  bool initial_handshake_complete_;
+
+  // The flag indicating whether an immeditate shutdown should take place.
+  bool shutdown_now_;
 };
 
 #endif // !defined(ASIO_ENABLE_OLD_SSL)

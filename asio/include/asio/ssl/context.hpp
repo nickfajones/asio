@@ -108,6 +108,29 @@ public:
    */
   ASIO_DECL impl_type impl();
 
+  /// Set option to reject SSL renegotation handshakes from the remote side.
+  /**
+   * This function sets the flag to indicate whether the SSL connnection
+   * (either client or server) should accept SSL renegotiation handshakes
+   * from the remote side.
+   *
+   * The default is to accept.
+   */
+  ASIO_DECL void set_reject_renegotiations(bool reject);
+
+  /// Set option to reject SSL renegotation handshakes from the remote side.
+  /**
+   * This function sets the flag to indicate whether the SSL connnection
+   * (either client or server) should accept SSL renegotiation handshakes
+   * from the remote side.
+   *
+   * The default is to accept.
+   *
+   * @throws asio::system_error Thrown on failure.
+   */
+  ASIO_DECL asio::error_code set_reject_renegotiations(
+    bool reject, asio::error_code& ec);
+
   /// Set options on the context.
   /**
    * This function may be used to configure the SSL options used by the context.
@@ -716,6 +739,10 @@ private:
   ASIO_DECL static int verify_callback_function(
       int preverified, X509_STORE_CTX* ctx);
 
+  // Callback used when the SSL implementation wants to announce events.
+  ASIO_DECL static void info_callback_function(
+      const SSL* ssl, int type, int val);
+
   // Helper function used to set a password callback.
   ASIO_DECL asio::error_code do_set_password_callback(
       detail::password_callback_base* callback, asio::error_code& ec);
@@ -727,8 +754,15 @@ private:
   // The underlying native implementation.
   native_handle_type handle_;
 
+  // The raw pointer to the certificate verification callback
+  detail::verify_callback_base* verify_callback_;
+
+  // The configuration flag indicating whether SSL renegotiations should be
+  // rejected or not.
+  bool reject_renegotiations_;
+
   // Ensure openssl is initialised.
-  asio::ssl::detail::openssl_init<> init_;
+  asio::ssl::detail::openssl_init<true> init_;
 };
 
 #endif // defined(ASIO_ENABLE_OLD_SSL)
