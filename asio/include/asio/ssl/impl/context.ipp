@@ -881,7 +881,11 @@ asio::error_code context::use_rsa_private_key(
   else if (format == context_base::pem)
   {
     rsa_private_key =
-      ::PEM_read_bio_RSAPrivateKey(bio, NULL, NULL, NULL);
+      (handle_->default_passwd_callback == 0) ?
+        ::PEM_read_bio_RSAPrivateKey(bio, NULL, NULL, NULL) :
+        ::PEM_read_bio_RSAPrivateKey(bio, NULL,
+          handle_->default_passwd_callback,
+          handle_->default_passwd_callback_userdata);
     if (rsa_private_key == NULL)
     {
       ec = asio::error_code(::ERR_get_error(),
