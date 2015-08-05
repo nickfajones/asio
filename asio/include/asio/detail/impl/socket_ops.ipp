@@ -903,7 +903,7 @@ int recvfrom(socket_type s, buf* bufs, size_t count, int flags,
     }
   }
   
-  delete ctrl_buf;
+  delete [] ctrl_buf;
 
   return result;
 #endif // defined(BOOST_WINDOWS) || defined(__CYGWIN__)
