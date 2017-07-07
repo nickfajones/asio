@@ -342,7 +342,9 @@ engine::want engine::perform(int (engine::* op)(void*, std::size_t),
 
 int engine::do_accept(void*, std::size_t)
 {
+#if (OPENSSL_VERSION_NUMBER < 0x10000000L)
   asio::detail::static_mutex::scoped_lock lock(accept_mutex());
+#endif // (OPENSSL_VERSION_NUMBER < 0x10000000L)
   return ::SSL_accept(ssl_);
 }
 
